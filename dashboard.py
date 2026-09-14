@@ -1,7 +1,10 @@
 import sqlite3
+import re
 from pathlib import Path
 
 import streamlit as st
+
+from chat.helper import process_query_with_result
 
 
 # ============================================================
@@ -52,6 +55,7 @@ def get_summary():
     cursor.execute(
         """
         SELECT
+
             COUNT(*) AS total,
 
             SUM(
@@ -182,6 +186,7 @@ def get_recent_records(
     cursor.execute(
         """
         SELECT
+
             id,
             timestamp,
             source,
@@ -206,6 +211,158 @@ def get_recent_records(
     connection.close()
 
     return rows
+
+
+# ============================================================
+# EXTRACT IMAGE PATHS FROM DATABASE RESULT
+# ============================================================
+
+def extract_image_paths(result):
+
+    image_paths = []
+
+    if not result:
+
+        return image_paths
+
+
+    # --------------------------------------------------------
+    # Case 1:
+    # SQLDatabase returns a string
+    #
+    # Example:
+    #
+    # [('inputs/images/plantimage1.jpg',),
+    #  ('inputs/images/plantimage5.jpg',)]
+    # --------------------------------------------------------
+
+    if isinstance(result, str):
+
+        matches = re.findall(
+            r"inputs[\\/]+images[\\/]+[^,\]\)\s]+"
+            r"\.(?:jpg|jpeg|png|webp)",
+            result,
+            flags=re.IGNORECASE
+        )
+
+
+        for path in matches:
+
+            path = path.replace(
+                "\\",
+                "/"
+            )
+
+
+            if path not in image_paths:
+
+                image_paths.append(
+                    path
+                )
+
+
+    # --------------------------------------------------------
+    # Case 2:
+    # Result is a list of tuples
+    # --------------------------------------------------------
+
+    elif isinstance(result, list):
+
+        for row in result:
+
+            if isinstance(
+                row,
+                (tuple, list)
+            ):
+
+                for value in row:
+
+                    if isinstance(
+                        value,
+                        str
+                    ):
+
+                        normalized = value.replace(
+                            "\\",
+                            "/"
+                        )
+
+
+                        if (
+                            normalized.lower().endswith(
+                                (
+                                    ".jpg",
+                                    ".jpeg",
+                                    ".png",
+                                    ".webp"
+                                )
+                            )
+                            and normalized not in image_paths
+                        ):
+
+                            image_paths.append(
+                                normalized
+                            )
+
+
+    return image_paths
+
+
+# ============================================================
+# DISPLAY CHAT IMAGES
+# ============================================================
+
+def display_chat_images(image_paths):
+
+    if not image_paths:
+
+        return
+
+
+    st.subheader(
+        "🖼️ Related Images"
+    )
+
+
+    # Maximum 3 images per row
+    image_columns = st.columns(
+        min(3, len(image_paths))
+    )
+
+
+    for index, image_path in enumerate(
+        image_paths
+    ):
+
+        relative_path = Path(
+            image_path
+        )
+
+
+        full_path = (
+            Path(".")
+            /
+            relative_path
+        )
+
+
+        if full_path.exists():
+
+            with image_columns[
+                index % len(image_columns)
+            ]:
+
+                st.image(
+                    str(full_path),
+                    caption=relative_path.name,
+                    use_container_width=True
+                )
+
+        else:
+
+            st.warning(
+                f"Image not found: {image_path}"
+            )
 
 
 # ============================================================
@@ -369,16 +526,19 @@ if processed_images:
         for image in processed_images
     ]
 
+
     selected_image = st.selectbox(
         "Select a processed image",
         image_names
     )
+
 
     selected_path = (
         OUTPUT_IMAGE_DIR
         /
         selected_image
     )
+
 
     st.image(
         str(selected_path),
@@ -408,6 +568,7 @@ if records:
 
     table_data = []
 
+
     for record in records:
 
         table_data.append(
@@ -424,6 +585,7 @@ if records:
             }
         )
 
+
     st.dataframe(
         table_data,
         use_container_width=True,
@@ -438,11 +600,176 @@ else:
 
 
 # ============================================================
+# AI ASSISTANT
+# ============================================================
+
+st.divider()
+
+st.subheader(
+    "🤖 PPE Detection AI Assistant"
+)
+
+st.caption(
+    "Ask questions about detection records, PPE status, "
+    "confidence scores, timestamps, violations, and images."
+)
+
+
+# ============================================================
+# CHAT HISTORY
+# ============================================================
+
+if "dashboard_messages" not in st.session_state:
+
+    st.session_state.dashboard_messages = []
+
+
+# ============================================================
+# DISPLAY CHAT HISTORY
+# ============================================================
+
+for message in st.session_state.dashboard_messages:
+
+    with st.chat_message(
+        message["role"]
+    ):
+
+        st.markdown(
+            message["content"]
+        )
+
+
+        # Display images belonging to this message
+
+        if (
+            message["role"] == "assistant"
+            and "image_paths" in message
+        ):
+
+            display_chat_images(
+                message["image_paths"]
+            )
+
+
+# ============================================================
+# CHAT INPUT
+# ============================================================
+
+question = st.chat_input(
+    "Ask about the PPE detection records..."
+)
+
+
+# ============================================================
+# PROCESS QUESTION
+# ============================================================
+
+if question:
+
+    # --------------------------------------------------------
+    # Display user message
+    # --------------------------------------------------------
+
+    with st.chat_message(
+        "user"
+    ):
+
+        st.markdown(
+            question
+        )
+
+
+    # Save user message
+
+    st.session_state.dashboard_messages.append(
+        {
+            "role": "user",
+            "content": question
+        }
+    )
+
+
+    # --------------------------------------------------------
+    # Generate answer
+    # --------------------------------------------------------
+
+    try:
+
+        with st.spinner(
+            "Analyzing detection records..."
+        ):
+
+            query_data = process_query_with_result(
+                question
+            )
+
+
+            answer = query_data["answer"]
+
+
+            result = query_data["result"]
+
+
+            # Extract actual image paths from
+            # the database result
+
+            image_paths = extract_image_paths(
+                result
+            )
+
+
+    except Exception as e:
+
+        answer = (
+            "Sorry, I couldn't process your question.\n\n"
+            f"Error: {e}"
+        )
+
+
+        image_paths = []
+
+
+    # --------------------------------------------------------
+    # Display assistant answer
+    # --------------------------------------------------------
+
+    with st.chat_message(
+        "assistant"
+    ):
+
+        st.markdown(
+            answer
+        )
+
+
+        # ----------------------------------------------------
+        # Display related images
+        # ----------------------------------------------------
+
+        display_chat_images(
+            image_paths
+        )
+
+
+    # --------------------------------------------------------
+    # Save assistant message
+    # --------------------------------------------------------
+
+    st.session_state.dashboard_messages.append(
+        {
+            "role": "assistant",
+            "content": answer,
+            "image_paths": image_paths
+        }
+    )
+
+
+# ============================================================
 # FOOTER
 # ============================================================
 
 st.divider()
 
 st.caption(
-    "PPE Detection System • Local SQLite Database"
+    "PPE Detection System • Local SQLite Database • AI Assistant"
 )

@@ -37,7 +37,7 @@ MODE = "image"
 
 
 IMAGE_PATH = (
-    "inputs/images/plantimage17.jpg"
+    "inputs/images/plantimage31.jpg"
 )
 
 

@@ -1,30 +1,105 @@
+# ============================================================
 # Python
+# ============================================================
+
 __pycache__/
 *.py[cod]
+*$py.class
 
 # Virtual environment
 .venv/
 venv/
+env/
+ENV/
 
-# VS Code
+# ============================================================
+# Environment variables / secrets
+# ============================================================
+
+.env
+.env.*
+!.env.example
+
+# ============================================================
+# Jupyter / Python tooling
+# ============================================================
+
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ============================================================
+# IDE / Editor
+# ============================================================
+
 .vscode/
+.idea/
 
-# Generated outputs
-outputs/
+# ============================================================
+# OS generated files
+# ============================================================
 
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================================
+# SQLite database
+# ============================================================
+
+database/*.db
+database/*.sqlite
+database/*.sqlite3
+
+# SQLite temporary files
+database/*.db-journal
+database/*.db-wal
+database/*.db-shm
+
+# ============================================================
 # Input data
-inputs/
+# ============================================================
 
-# YOLO training artifacts
-runs/
-wandb/
+inputs/images/*
+inputs/videos/*
 
+# Keep the directories in Git
+!inputs/images/.gitkeep
+!inputs/videos/.gitkeep
+
+# ============================================================
+# Generated outputs
+# ============================================================
+
+outputs/images/*
+outputs/videos/*
+outputs/logs/*
+
+# Keep output directories in Git
+!outputs/images/.gitkeep
+!outputs/videos/.gitkeep
+!outputs/logs/.gitkeep
+
+# ============================================================
+# ML model files
+# ============================================================
+
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# ============================================================
 # Logs
+# ============================================================
+
 *.log
 
-# OS files
-Thumbs.db
-.DS_Store
+# ============================================================
+# Temporary files
+# ============================================================
 
-# Local SQLite database
-database/*.db
+*.tmp
+*.temp
+*.bak
