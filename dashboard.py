@@ -5,6 +5,10 @@ from pathlib import Path
 import streamlit as st
 
 from chat.helper import process_query_with_result
+from chat.voice_input import transcribe_audio
+from chat.corrective_actions import (
+    get_warning_for_question
+)
 
 
 # ============================================================
@@ -99,11 +103,16 @@ def get_summary():
     connection.close()
 
     return {
+
         "total": row[0] or 0,
+
         "compliant": row[1] or 0,
+
         "non_compliant": row[2] or 0,
+
         "partial": row[3] or 0,
-        "unknown": row[4] or 0,
+
+        "unknown": row[4] or 0
     }
 
 
@@ -164,10 +173,14 @@ def get_violations():
     connection.close()
 
     return {
+
         "helmet": row[0] or 0,
+
         "vest": row[1] or 0,
+
         "shoes": row[2] or 0,
-        "goggles": row[3] or 0,
+
+        "goggles": row[3] or 0
     }
 
 
@@ -229,14 +242,12 @@ def extract_image_paths(result):
     # --------------------------------------------------------
     # Case 1:
     # SQLDatabase returns a string
-    #
-    # Example:
-    #
-    # [('inputs/images/plantimage1.jpg',),
-    #  ('inputs/images/plantimage5.jpg',)]
     # --------------------------------------------------------
 
-    if isinstance(result, str):
+    if isinstance(
+        result,
+        str
+    ):
 
         matches = re.findall(
             r"inputs[\\/]+images[\\/]+[^,\]\)\s]+"
@@ -266,7 +277,10 @@ def extract_image_paths(result):
     # Result is a list of tuples
     # --------------------------------------------------------
 
-    elif isinstance(result, list):
+    elif isinstance(
+        result,
+        list
+    ):
 
         for row in result:
 
@@ -312,7 +326,9 @@ def extract_image_paths(result):
 # DISPLAY CHAT IMAGES
 # ============================================================
 
-def display_chat_images(image_paths):
+def display_chat_images(
+    image_paths
+):
 
     if not image_paths:
 
@@ -325,8 +341,12 @@ def display_chat_images(image_paths):
 
 
     # Maximum 3 images per row
+
     image_columns = st.columns(
-        min(3, len(image_paths))
+        min(
+            3,
+            len(image_paths)
+        )
     )
 
 
@@ -363,6 +383,65 @@ def display_chat_images(image_paths):
             st.warning(
                 f"Image not found: {image_path}"
             )
+
+
+# ============================================================
+# DISPLAY PPE SAFETY WARNING
+# ============================================================
+
+def display_ppe_warning(
+    question,
+    violations
+):
+
+    warning_data = get_warning_for_question(
+        question,
+        violations
+    )
+
+
+    # --------------------------------------------------------
+    # No relevant violation
+    # --------------------------------------------------------
+
+    if not warning_data:
+
+        return
+
+
+    # --------------------------------------------------------
+    # Multiple PPE violations
+    # --------------------------------------------------------
+
+    if isinstance(
+        warning_data,
+        list
+    ):
+
+        for warning in warning_data:
+
+            st.warning(
+                f"⚠️ **SAFETY WARNING — "
+                f"{warning['name']}**\n\n"
+                f"**{warning['count']} violation(s) detected.**\n\n"
+                f"🛠️ **Required Action:** "
+                f"{warning['action']}"
+            )
+
+        return
+
+
+    # --------------------------------------------------------
+    # Single PPE violation
+    # --------------------------------------------------------
+
+    st.warning(
+        f"⚠️ **SAFETY WARNING — "
+        f"{warning_data['name']}**\n\n"
+        f"**{warning_data['count']} violation(s) detected.**\n\n"
+        f"🛠️ **Required Action:** "
+        f"{warning_data['action']}"
+    )
 
 
 # ============================================================
@@ -413,7 +492,10 @@ st.subheader(
     "Overall Status"
 )
 
-col1, col2, col3, col4, col5 = st.columns(5)
+
+col1, col2, col3, col4, col5 = st.columns(
+    5
+)
 
 
 with col1:
@@ -466,7 +548,10 @@ st.subheader(
     "⚠️ PPE Violations"
 )
 
-col1, col2, col3, col4 = st.columns(4)
+
+col1, col2, col3, col4 = st.columns(
+    4
+)
 
 
 with col1:
@@ -522,7 +607,9 @@ processed_images = sorted(
 if processed_images:
 
     image_names = [
+
         image.name
+
         for image in processed_images
     ]
 
@@ -545,6 +632,7 @@ if processed_images:
         caption=selected_image,
         use_container_width=True
     )
+
 
 else:
 
@@ -573,15 +661,24 @@ if records:
 
         table_data.append(
             {
+
                 "ID": record[0],
+
                 "Timestamp": record[1],
+
                 "Source": record[2],
+
                 "Person": record[3],
+
                 "Helmet": record[4],
+
                 "Vest": record[5],
+
                 "Safety Shoes": record[6],
+
                 "Safety Goggles": record[7],
-                "Overall Status": record[8],
+
+                "Overall Status": record[8]
             }
         )
 
@@ -591,6 +688,7 @@ if records:
         use_container_width=True,
         hide_index=True
     )
+
 
 else:
 
@@ -619,9 +717,24 @@ st.caption(
 # CHAT HISTORY
 # ============================================================
 
-if "dashboard_messages" not in st.session_state:
+if (
+    "dashboard_messages"
+    not in st.session_state
+):
 
     st.session_state.dashboard_messages = []
+
+
+# ============================================================
+# VOICE INPUT STATE
+# ============================================================
+
+if (
+    "last_voice_audio_id"
+    not in st.session_state
+):
+
+    st.session_state.last_voice_audio_id = None
 
 
 # ============================================================
@@ -639,7 +752,51 @@ for message in st.session_state.dashboard_messages:
         )
 
 
+        # ----------------------------------------------------
+        # Display warning saved with this message
+        # ----------------------------------------------------
+
+        if (
+            message["role"] == "assistant"
+            and message.get("warning_data")
+        ):
+
+            warning_data = message[
+                "warning_data"
+            ]
+
+
+            if isinstance(
+                warning_data,
+                list
+            ):
+
+                for warning in warning_data:
+
+                    st.warning(
+                        f"⚠️ **SAFETY WARNING — "
+                        f"{warning['name']}**\n\n"
+                        f"**{warning['count']} "
+                        f"violation(s) detected.**\n\n"
+                        f"🛠️ **Required Action:** "
+                        f"{warning['action']}"
+                    )
+
+            else:
+
+                st.warning(
+                    f"⚠️ **SAFETY WARNING — "
+                    f"{warning_data['name']}**\n\n"
+                    f"**{warning_data['count']} "
+                    f"violation(s) detected.**\n\n"
+                    f"🛠️ **Required Action:** "
+                    f"{warning_data['action']}"
+                )
+
+
+        # ----------------------------------------------------
         # Display images belonging to this message
+        # ----------------------------------------------------
 
         if (
             message["role"] == "assistant"
@@ -652,11 +809,125 @@ for message in st.session_state.dashboard_messages:
 
 
 # ============================================================
-# CHAT INPUT
+# CHAT INPUT AREA
 # ============================================================
 
-question = st.chat_input(
-    "Ask about the PPE detection records..."
+voice_column, text_column = st.columns(
+    [1, 1]
+)
+
+
+# ============================================================
+# VOICE INPUT
+# ============================================================
+
+with voice_column:
+
+    audio = st.audio_input(
+        "🎤 Ask using your voice",
+        key="voice_recorder"
+    )
+
+
+# ============================================================
+# TEXT INPUT
+# ============================================================
+
+with text_column:
+
+    with st.form(
+        "text_question_form",
+        clear_on_submit=True
+    ):
+
+        typed_question = st.text_input(
+            "Ask your question",
+            placeholder=(
+                "e.g. How many people are without helmet?"
+            )
+        )
+
+
+        send_button = st.form_submit_button(
+            "📤 Send",
+            use_container_width=True
+        )
+
+
+# ============================================================
+# DETERMINE QUESTION SOURCE
+# ============================================================
+
+voice_question = None
+
+text_question = None
+
+
+# ------------------------------------------------------------
+# Process a new voice recording
+# ------------------------------------------------------------
+
+if audio:
+
+    audio_id = hash(
+        audio.getvalue()
+    )
+
+
+    if (
+        audio_id
+        !=
+        st.session_state.last_voice_audio_id
+    ):
+
+        st.session_state.last_voice_audio_id = (
+            audio_id
+        )
+
+
+        with st.spinner(
+            "🎤 Converting speech to text..."
+        ):
+
+            try:
+
+                voice_question = transcribe_audio(
+                    audio
+                )
+
+            except Exception as e:
+
+                st.error(
+                    "Voice transcription failed: "
+                    f"{e}"
+                )
+
+                voice_question = None
+
+
+# ------------------------------------------------------------
+# Process typed question
+# ------------------------------------------------------------
+
+if (
+    send_button
+    and
+    typed_question
+    and
+    typed_question.strip()
+):
+
+    text_question = typed_question.strip()
+
+
+# ============================================================
+# SELECT FINAL QUESTION
+# ============================================================
+
+question = (
+    voice_question
+    if voice_question
+    else text_question
 )
 
 
@@ -667,7 +938,7 @@ question = st.chat_input(
 if question:
 
     # --------------------------------------------------------
-    # Display user message
+    # Display user question
     # --------------------------------------------------------
 
     with st.chat_message(
@@ -679,7 +950,9 @@ if question:
         )
 
 
+    # --------------------------------------------------------
     # Save user message
+    # --------------------------------------------------------
 
     st.session_state.dashboard_messages.append(
         {
@@ -690,7 +963,7 @@ if question:
 
 
     # --------------------------------------------------------
-    # Generate answer
+    # Generate AI answer
     # --------------------------------------------------------
 
     try:
@@ -704,17 +977,32 @@ if question:
             )
 
 
-            answer = query_data["answer"]
+            answer = query_data[
+                "answer"
+            ]
 
 
-            result = query_data["result"]
+            result = query_data[
+                "result"
+            ]
 
 
-            # Extract actual image paths from
-            # the database result
+            # ------------------------------------------------
+            # Extract related images
+            # ------------------------------------------------
 
             image_paths = extract_image_paths(
                 result
+            )
+
+
+            # ------------------------------------------------
+            # Determine safety warning
+            # ------------------------------------------------
+
+            warning_data = get_warning_for_question(
+                question,
+                violations
             )
 
 
@@ -725,17 +1013,22 @@ if question:
             f"Error: {e}"
         )
 
-
         image_paths = []
 
+        warning_data = None
 
-    # --------------------------------------------------------
-    # Display assistant answer
-    # --------------------------------------------------------
+
+    # ========================================================
+    # DISPLAY ASSISTANT RESPONSE
+    # ========================================================
 
     with st.chat_message(
         "assistant"
     ):
+
+        # ----------------------------------------------------
+        # 1. AI DATABASE RESULT
+        # ----------------------------------------------------
 
         st.markdown(
             answer
@@ -743,7 +1036,50 @@ if question:
 
 
         # ----------------------------------------------------
-        # Display related images
+        # 2. SAFETY WARNING
+        # ----------------------------------------------------
+
+        if warning_data:
+
+            # ------------------------------------------------
+            # Multiple violations
+            # ------------------------------------------------
+
+            if isinstance(
+                warning_data,
+                list
+            ):
+
+                for warning in warning_data:
+
+                    st.warning(
+                        f"⚠️ **SAFETY WARNING — "
+                        f"{warning['name']}**\n\n"
+                        f"**{warning['count']} "
+                        f"violation(s) detected.**\n\n"
+                        f"🛠️ **Required Action:** "
+                        f"{warning['action']}"
+                    )
+
+
+            # ------------------------------------------------
+            # Single violation
+            # ------------------------------------------------
+
+            else:
+
+                st.warning(
+                    f"⚠️ **SAFETY WARNING — "
+                    f"{warning_data['name']}**\n\n"
+                    f"**{warning_data['count']} "
+                    f"violation(s) detected.**\n\n"
+                    f"🛠️ **Required Action:** "
+                    f"{warning_data['action']}"
+                )
+
+
+        # ----------------------------------------------------
+        # 3. RELATED IMAGES
         # ----------------------------------------------------
 
         display_chat_images(
@@ -751,15 +1087,19 @@ if question:
         )
 
 
-    # --------------------------------------------------------
-    # Save assistant message
-    # --------------------------------------------------------
+    # ========================================================
+    # SAVE ASSISTANT MESSAGE
+    # ========================================================
 
     st.session_state.dashboard_messages.append(
         {
             "role": "assistant",
+
             "content": answer,
-            "image_paths": image_paths
+
+            "image_paths": image_paths,
+
+            "warning_data": warning_data
         }
     )
 
